@@ -73,6 +73,8 @@ DynLibFunction symtable_math[] = {
     #define FB_DECL_FWD(func, ret, args, vars) {#func, (uintptr_t)&bridge_##func},
     MATH_BRIDGE_DEFS
     #undef FB_DECL_FWD
+	
+    #ifdef __ARM_ARCH
     {"__aeabi_d2f", (uintptr_t)&__aeabi_d2f},
     {"__aeabi_d2iz", (uintptr_t)&__aeabi_d2iz},
     {"__aeabi_d2lz", (uintptr_t)&__aeabi_d2lz},
@@ -112,5 +114,6 @@ DynLibFunction symtable_math[] = {
     {"__aeabi_uidivmod", (uintptr_t)&__aeabi_uidivmod},
     {"__aeabi_ul2d", (uintptr_t)&__aeabi_ul2d},
     {"__aeabi_uldivmod", (uintptr_t)&__aeabi_uldivmod},
+    #endif
     {NULL, (uintptr_t)NULL}
 };

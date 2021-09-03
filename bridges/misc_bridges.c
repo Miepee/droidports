@@ -223,12 +223,15 @@ int usleep(long usec)
 }
 
 DynLibFunction symtable_misc[] = {
+    #ifdef __ARM_ARCH
     {"_ZdaPv", (uintptr_t)&_ZdaPv},
     {"_ZdlPv", (uintptr_t)&_ZdlPv},
     {"_Znaj", (uintptr_t)&_Znaj},
     {"_Znwj", (uintptr_t)&_Znwj},
     {"__gnu_Unwind_Find_exidx", (uintptr_t)&__gnu_Unwind_Find_exidx},
+    #endif
 
+    #ifdef __ARM_ARCH
     {"__aeabi_atexit", (uintptr_t)&atexit_fake},
     {"__aeabi_memclr", (uintptr_t)&aeabi_memclr_impl},
     {"__aeabi_memclr4", (uintptr_t)&aeabi_memclr_impl},
@@ -242,6 +245,7 @@ DynLibFunction symtable_misc[] = {
     {"__aeabi_memset", (uintptr_t)&aeabi_memset_impl},
     {"__aeabi_memset4", (uintptr_t)&aeabi_memset_impl},
     {"__aeabi_memset8", (uintptr_t)&aeabi_memset_impl},
+    #endif
 
     {"__android_log_print", (uintptr_t)&impl__android_log_print},
     {"__android_log_vprint", (uintptr_t)&impl__android_log_vprint},

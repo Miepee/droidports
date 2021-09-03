@@ -106,9 +106,9 @@ int so_load(so_module *mod, const char *filename, uintptr_t load_addr, void *so_
   }
 #endif
 
-  mod->ehdr = (Elf32_Ehdr *)so_data;
-  mod->phdr = (Elf32_Phdr *)((uintptr_t)so_data + mod->ehdr->e_phoff);
-  mod->shdr = (Elf32_Shdr *)((uintptr_t)so_data + mod->ehdr->e_shoff);
+  mod->ehdr = (Elf_Ehdr *)so_data;
+  mod->phdr = (Elf_Phdr *)((uintptr_t)so_data + mod->ehdr->e_phoff);
+  mod->shdr = (Elf_Shdr *)((uintptr_t)so_data + mod->ehdr->e_shoff);
 
   mod->shstr = (char *)((uintptr_t)so_data + mod->shdr[mod->ehdr->e_shstrndx].sh_offset);
 
@@ -126,7 +126,7 @@ int so_load(so_module *mod, const char *filename, uintptr_t load_addr, void *so_
 
         prog_data = block_get_base_address(mod->text_blockid);
 
-        mod->phdr[i].p_vaddr += (Elf32_Addr)prog_data;
+        mod->phdr[i].p_vaddr += (Elf_Addr)prog_data;
 
         mod->text_base = mod->phdr[i].p_vaddr;
         mod->text_size = mod->phdr[i].p_memsz;
@@ -144,7 +144,7 @@ int so_load(so_module *mod, const char *filename, uintptr_t load_addr, void *so_
 
         prog_data = block_get_base_address(mod->data_blockid);
 
-        mod->phdr[i].p_vaddr += (Elf32_Addr)mod->text_base;
+        mod->phdr[i].p_vaddr += (Elf_Addr)mod->text_base;
 
         mod->data_base = mod->phdr[i].p_vaddr;
         mod->data_size = mod->phdr[i].p_memsz;
@@ -164,19 +164,19 @@ int so_load(so_module *mod, const char *filename, uintptr_t load_addr, void *so_
     uintptr_t sh_addr = mod->text_base + mod->shdr[i].sh_addr;
     size_t sh_size = mod->shdr[i].sh_size;
     if (strcmp(sh_name, ".dynamic") == 0) {
-      mod->dynamic = (Elf32_Dyn *)sh_addr;
-      mod->num_dynamic = sh_size / sizeof(Elf32_Dyn);
+      mod->dynamic = (Elf_Dyn *)sh_addr;
+      mod->num_dynamic = sh_size / sizeof(Elf_Dyn);
     } else if (strcmp(sh_name, ".dynstr") == 0) {
       mod->dynstr = (char *)sh_addr;
     } else if (strcmp(sh_name, ".dynsym") == 0) {
-      mod->dynsym = (Elf32_Sym *)sh_addr;
-      mod->num_dynsym = sh_size / sizeof(Elf32_Sym);
-    } else if (strcmp(sh_name, ".rel.dyn") == 0) {
-      mod->reldyn = (Elf32_Rel *)sh_addr;
-      mod->num_reldyn = sh_size / sizeof(Elf32_Rel);
-    } else if (strcmp(sh_name, ".rel.plt") == 0) {
-      mod->relplt = (Elf32_Rel *)sh_addr;
-      mod->num_relplt = sh_size / sizeof(Elf32_Rel);
+      mod->dynsym = (Elf_Sym *)sh_addr;
+      mod->num_dynsym = sh_size / sizeof(Elf_Sym);
+    } else if (strcmp(sh_name, ".rel.dyn") == 0 || strcmp(sh_name, ".rela.dyn") == 0) {
+      mod->reldyn = (Elf_Rel *)sh_addr;
+      mod->num_reldyn = sh_size / sizeof(Elf_Rel);
+    } else if (strcmp(sh_name, ".rel.plt") == 0 || strcmp(sh_name, ".rela.plt") == 0) {
+      mod->relplt = (Elf_Rel *)sh_addr;
+      mod->num_relplt = sh_size / sizeof(Elf_Rel);
     } else if (strcmp(sh_name, ".init_array") == 0) {
       mod->init_array = (void *)sh_addr;
       mod->num_init_array = sh_size / sizeof(void *);
@@ -236,20 +236,24 @@ err_free_so:
 
 int so_relocate(so_module *mod) {
   for (int i = 0; i < mod->num_reldyn + mod->num_relplt; i++) {
-    Elf32_Rel *rel = i < mod->num_reldyn ? &mod->reldyn[i] : &mod->relplt[i - mod->num_reldyn];
-    Elf32_Sym *sym = &mod->dynsym[ELF32_R_SYM(rel->r_info)];
+    Elf_Rel *rel = i < mod->num_reldyn ? &mod->reldyn[i] : &mod->relplt[i - mod->num_reldyn];
+    Elf_Sym *sym = &mod->dynsym[ELF_R_SYM(rel->r_info)];
     uintptr_t *ptr = (uintptr_t *)(mod->text_base + rel->r_offset);
 
-    int type = ELF32_R_TYPE(rel->r_info);
+    int type = ELF_R_TYPE(rel->r_info);
     switch (type) {
+	  case R_X86_64_64:
       case R_ARM_ABS32:
         *ptr += mod->text_base + sym->st_value;
         break;
 
+      case R_X86_64_RELATIVE:
       case R_ARM_RELATIVE:
         *ptr += mod->text_base;
         break;
 
+      case R_X86_64_GLOB_DAT:
+	  case R_X86_64_JUMP_SLOT:
       case R_ARM_GLOB_DAT:
       case R_ARM_JUMP_SLOT:
       {
@@ -306,12 +310,13 @@ void reloc_err(uintptr_t got0)
   if (curr) {
     // Attempt to find symbol name and then display error
     for (int i = 0; i < curr->num_reldyn + curr->num_relplt; i++) {
-      Elf32_Rel *rel = i < curr->num_reldyn ? &curr->reldyn[i] : &curr->relplt[i - curr->num_reldyn];
-      Elf32_Sym *sym = &curr->dynsym[ELF32_R_SYM(rel->r_info)];
+      Elf_Rel *rel = i < curr->num_reldyn ? &curr->reldyn[i] : &curr->relplt[i - curr->num_reldyn];
+      Elf_Sym *sym = &curr->dynsym[ELF_R_SYM(rel->r_info)];
       uintptr_t *ptr = (uintptr_t *)(curr->text_base + rel->r_offset);
 
-      int type = ELF32_R_TYPE(rel->r_info);
+      int type = ELF_R_TYPE(rel->r_info);
       switch (type) {
+		case R_X86_64_JUMP_SLOT:
         case R_ARM_JUMP_SLOT:
         {
           if (got0 == (uintptr_t)ptr) {
@@ -337,14 +342,17 @@ __attribute__((naked)) void plt0_stub()
 
 int so_resolve(so_module *mod) {
   for (int i = 0; i < mod->num_reldyn + mod->num_relplt; i++) {
-    Elf32_Rel *rel = i < mod->num_reldyn ? &mod->reldyn[i] : &mod->relplt[i - mod->num_reldyn];
-    Elf32_Sym *sym = &mod->dynsym[ELF32_R_SYM(rel->r_info)];
+    Elf_Rel *rel = i < mod->num_reldyn ? &mod->reldyn[i] : &mod->relplt[i - mod->num_reldyn];
+    Elf_Sym *sym = &mod->dynsym[ELF_R_SYM(rel->r_info)];
     uintptr_t *ptr = (uintptr_t *)(mod->text_base + rel->r_offset);
 
-    int type = ELF32_R_TYPE(rel->r_info);
+    int type = ELF_R_TYPE(rel->r_info);
     switch (type) {
+	  case R_X86_64_64:
       case R_ARM_ABS32:
+	  case R_X86_64_GLOB_DAT:
       case R_ARM_GLOB_DAT:
+	  case R_X86_64_JUMP_SLOT:
       case R_ARM_JUMP_SLOT:
       {
         if (sym->st_shndx == SHN_UNDEF) {
@@ -378,7 +386,7 @@ int so_resolve(so_module *mod) {
           // For unresolved PLT entries, set unresolved links to the error stub so it fails in runtime
           // For other entries, fail completely.
           if (!resolved) {
-            if (type == R_ARM_JUMP_SLOT) {
+            if (type == R_ARM_JUMP_SLOT || type == R_X86_64_JUMP_SLOT) {
               warning("Missing: %s\n", mod->dynstr + sym->st_name);
               *ptr = (uintptr_t)&plt0_stub;
             }
