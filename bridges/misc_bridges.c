@@ -36,6 +36,8 @@ extern void *_ZTVN10__cxxabiv120__si_class_type_infoE;
 extern void *__stack_chk_fail;
 extern void *__stack_chk_guard;
 
+extern void *__gxx_personality_v0;
+
 static int __stack_chk_guard_fake = 0xD2424242;
 
 ABI_ATTR static void aeabi_memclr_impl(void *dst, size_t len)
@@ -319,6 +321,9 @@ DynLibFunction symtable_misc[] = {
     {"srand", (uintptr_t)&srand},
     {"nanosleep", (uintptr_t)&nanosleep},
     {"usleep", (uintptr_t)&usleep},
+	
+	{"__gxx_personality_v0", (uintptr_t)&__gxx_personality_v0},
+	
 
     {NULL, (uintptr_t)NULL}
 };
